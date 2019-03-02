@@ -82,6 +82,7 @@ def get_bag_and_other_objects(objects):
     return bags,others
     
 def get_closest_bag(objects,person):
+    #adds only the closest bag to all the objects and proceeds.
     bags, others = get_bag_and_other_objects(objects)
     min_dist = 999999999
     closest_bag = ''
@@ -95,6 +96,7 @@ def get_closest_bag(objects,person):
     else:
         others.append(closest_bag)
     return others
+
 
 def fill_in_missing_objects(modobjects):
     seenobjects= {}
@@ -118,6 +120,7 @@ def generate_person_object_locations_prevframes(sequence):
     idx = 0
     if len(sequence.imageDataList) != 5:
         print(" Maintain the length of sequence as 5")
+        print(sequence.dirName)
     for item in sequence.imageDataList:
         idx += 1
         objects = item.objectList
@@ -131,6 +134,7 @@ def generate_person_object_locations_prevframes(sequence):
                 previdx = last[0]
                 while previdx != idx-1:
                     per = Person()
+                    per.name = person.name
                     lis.append((previdx + 1,[],per))
                     previdx += 1
                 lis.append((idx,objectsmod,person))
@@ -140,87 +144,85 @@ def generate_person_object_locations_prevframes(sequence):
                 previdx = 0
                 while previdx != idx-1:
                     per = Person()
+                    per.name = person.name
                     lis.append((previdx + 1,[],per))
                     previdx += 1
                 lis.append((idx,objectsmod,person))
                 person_set[person.name] = lis
     for item in person_set.keys():
         lis = person_set[item]
+        last = lis[-1]
+        previdx = last[0]
+        while previdx <5:
+            per = Person()
+            per.name = item
+            lis.append((previdx + 1,[],per))
+            previdx += 1
+    
+    for item in person_set.keys():
+        lis = person_set[item]
         newlis = []
         for it in lis:
             newlis.append( ( it[1] , it[2] ) )
+        #print(len(newlis))
         person_set[item] = newlis
         
     #also filters with only the bag closest to the person added to the objects corresponding to that person.
     # now for each person you have a the set of object locations and pose locations over the past 5 frames.
     return person_set
 
-def generate_featuremap(sequence):
-    #output: generates a feature map for each person in the fashion [(person.name, featuremap) , (person.name, featuremap) .. ]
-            # feature are generated for the last 5 frames
+def generate_featuremap_lstm(sequence):
+    #output: generates each feature over a time frame individually.
+             #feature1 [x x1 x2 x3 x4]
+             #feature2 [y y1 y2 y3 y4]
+             # feature here means the locations of objects and joint locations.
     person_set = generate_person_object_locations_prevframes(sequence)
     feature_list = []
     
     for item in person_set.keys():
         name = item
         item = person_set[item]
-        combined_feature = []
+        #usually 8 objects (1 + 7 objects ) and 18 joint locations == total
+        features = [] # over frames
+        for i in range(5):
+            features.append([])
+        idx = 0
         for frameitem in item:  #iterating over frames and appending features
-            feature1 = []
-            feature2 = []
-            feature3 = []
-            feature4 = []
+            # appending object locations
+            if len(frameitem[0]) == 0:
+                for i in range(8):
+                    features[idx].extend([-1, -1])
+            else:
+                for obj in frameitem[0]:
+                    features[idx].extend(calculateCentroid(obj))
+            
             joint_locations = frameitem[1].jointLocations
             if len(joint_locations) == 0:
-                shoulder_pos_r = (0 , 0 )
-                wrist_pos_r = (0 , 0 )
-                shoulder_pos_l = (0 , 0 )
-                wrist_pos_l = (0 , 0 )
-                head_loc = (0 , 0 )
+                for i in range(8,26):
+                    features[idx].extend([ -1, -1 ])
             else:
-                shoulder_pos_r = ( joint_locations[4] , joint_locations[5] )
-                wrist_pos_r = ( joint_locations[8] , joint_locations[9] )
-                shoulder_pos_l = ( joint_locations[10] , joint_locations[11] )
-                wrist_pos_l = ( joint_locations[14] , joint_locations[15] )
-                head_loc = ( joint_locations[0] , joint_locations[1] )
-            #feature_1 shoulder wrist distance
-            feature1.append(calculateDistance(wrist_pos_l, shoulder_pos_l))
-            feature1.append(calculateDistance(wrist_pos_r, shoulder_pos_r))
-    
-            #feature_2 
-            count = 7 #maximum number of objects in a frame
-            bags, others = get_bag_and_other_objects(frameitem[0])
-            for obj in others:
-                count = count - 1
-                feature2.append(calculateDistance(wrist_pos_l,calculateCentroid(obj)))
-                feature2.append(calculateDistance(wrist_pos_r,calculateCentroid(obj)))
-                feature3.append(calculateDistance(head_loc,calculateCentroid(obj)))
-                feature4.append(calculateDistance(calculateCentroid(bags[0]),calculateCentroid(obj)))
-            while count > 0:
-                feature2.append(0)
-                feature2.append(0)
-                feature3.append(0)
-                feature4.append(0)
-                count = count - 1
-            feature = feature1 + feature2 + feature3 + feature4
-            combined_feature.extend(feature)
-        feature_list.append((name,combined_feature))     
+                j = 0
+                for i in range(8,26):
+                    features[idx].extend([ joint_locations[j],joint_locations[j+1] ])    
+                    j += 2
+            idx += 1
+        feature_list.append((name,features))
     return feature_list
          
 def generate_data(all_sequences):
     all_features = []
     all_labels = []
     for seq in all_sequences:
-        features = generate_featuremap(seq)
+        features = generate_featuremap_lstm(seq)
         #print(features)
         labels = seq.label
         #print(labels)
         if(len(labels) == len(features)):
             for it in range(0,len(labels)):
                 #print(len(features[it][1]))
-                if len(features[it][1]) == 150: #calculated from the constant value. Make sure this is 150 else you have more objects or blank persons added.
-                    all_features.append(features[it][1])
-                    all_labels.append(labels[it])
+                #if len(features[it][1]) == 150: #calculated from the constant value
+                all_features.append(features[it][1])
+                all_labels.append(labels[it])
     return all_features,all_labels
 
 def discretize(labels):
@@ -241,54 +243,9 @@ def discretize(labels):
 
 #saving the SVM's model
 
-from joblib import dump
-def linear_classification(features,labels):
-#    try:
-    data = features
-    labels = np.asarray(discretize(labels))
-    kf = KFold(n_splits=4,shuffle=True)
-    conf_mat=np.full((4,4),0)
-    scores=[]
-    for train_index, test_index in kf.split(data):
-        train_d = []
-        train_l = []
-        test_d = []
-        test_l = []
-        for it in range(0,len(features)):
-            if it in train_index:
-                train_d.append(features[it])
-                train_l.append(labels[it])
-            if it in test_index:
-                test_d.append(features[it])
-                test_l.append(labels[it])
-        print("done")
-        train_d = np.asarray(train_d)
-        #print(train_d.shape)
-        test_d = np.asarray(test_d)
-        #print(test_d.shape)
-        global clf
-        clf = svm.LinearSVC(C=3,max_iter = 10000)
-        #clf = svm.SVC(gamma='scale', decision_function_shape='ovo',C = 3.5 , max_iter = 10000,degree = 5)
-        dump(clf, 'activity_recognition.joblib') 
-        clf.fit(train_d, train_l)
-
-        ftrain_pred=clf.predict(train_d)
-        ftest_pred=clf.predict(test_d)
-        cur_score=accuracy_score(test_l,ftest_pred, normalize=True)
-        scores.append(cur_score)
-        train_score=accuracy_score(train_l,ftrain_pred,normalize=True)
-        print(train_score,cur_score)
-        #for j in range(len(test_l)):
-        #    if(ftest_pred[j]!=test_l[j]):
-        #        print("misclassified - ",ftest[j,0]," where ",num_to_exer(ftest[j,1])," as ",num_to_exer(ftest_pred[j]))
-        cur_matrix=confusion_matrix(test_l,ftest_pred)
-        cur_matrix=np.asarray(cur_matrix)
-        conf_mat=np.add(conf_mat, cur_matrix)
-    scores=np.asarray(scores)    
-    print(scores.mean())
-    print(conf_mat)           
-#    except:
-#        print("error")     
+def lstm():
+    
+    return
 
 
 
@@ -385,12 +342,107 @@ def loadDir():
         all_sequences.append(cursequence)
     return all_sequences
         
+from keras.models import Sequential
+from keras.layers.recurrent import LSTM
+from keras.layers.core import Dense, Activation, Dropout
+from sklearn.metrics import mean_squared_error
+from sklearn.utils import shuffle
+
+def fit_model(train_X, train_Y, window_size = 5):
+    model = Sequential()
+    
+    model.add(LSTM(4, 
+                   input_shape = (1, window_size)))
+    model.add(Dense(1))
+    model.compile(loss = "mean_squared_error", 
+                  optimizer = "adam")
+    model.fit(train_X, 
+              train_Y, 
+              epochs = 100, 
+              batch_size = 1, 
+              verbose = 2)
+    
+    return(model)
+
+
+
+def predict_and_score(model, X, Y):
+    # Make predictions on the original scale of the data.
+    pred = scaler.inverse_transform(model.predict(X))
+    # Prepare Y data to also be on the original scale for interpretability.
+    orig_data = scaler.inverse_transform([Y])
+    # Calculate RMSE.
+    score = math.sqrt(mean_squared_error(orig_data[0], pred[:, 0]))
+    return(score, pred)
+
+
+from numpy import array
+def convert_to_lstm_format(all_features):
+        npfeatures = array(all_features) 	
+        features = npfeatures.reshape(len(all_features), 52, 5)
+        print(features.shape)
+        return npfeatures      
+
+def normalize_time_series(all_features):
+    new_list = []
+
+    #normalization
+    for item in all_features:
+        for item2 in item:
+            new_list.append(item2)
+    
+    from sklearn.preprocessing import MinMaxScaler  
+    scaler = MinMaxScaler(feature_range = (0, 1))
+    all_features_scaled = scaler.fit_transform(new_list)  
+    
+    final_list = []
+    lis= []
+    #converting back to time series
+    for idx in range(len(all_features_scaled)):
+        lis.append(all_features_scaled[idx])
+        if (idx + 1) % 5 ==0:
+            final_list.append(lis)
+            lis=[]
+    return final_list
+
+
+def train_test_split(features, labels):
+    data = features
+    labels = np.asarray(discretize(labels))
+    kf = KFold(n_splits=4,shuffle=True)
+    conf_mat=np.full((4,4),0)
+    scores=[]
+    for train_index, test_index in kf.split(data):
+        train_d = []
+        train_l = []
+        test_d = []
+        test_l = []
+        for it in range(0,len(features)):
+            if it in train_index:
+                train_d.append(features[it])
+                train_l.append(labels[it])
+            if it in test_index:
+                test_d.append(features[it])
+                test_l.append(labels[it])
+        print("done")
+
+        train_d = convert_to_lstm_format(train_d)
+        test_d = convert_to_lstm_format(test_d)
+        
+        
+        cur_matrix=confusion_matrix(test_l,ftest_pred)
+        cur_matrix=np.asarray(cur_matrix)
+        conf_mat=np.add(conf_mat, cur_matrix)
+    scores=np.asarray(scores)    
+    print(scores.mean())
+    print(conf_mat)
+
+
+
 all_sequences = loadDir()   
 all_features, all_labels = generate_data(all_sequences)
+all_features = normalize_time_series(all_features)
+train_test_split(all_features, all_labels)
 
-from sklearn.preprocessing import MinMaxScaler  
-scaler = MinMaxScaler(feature_range = (0, 1))
-all_features_scaled = scaler.fit_transform(all_features)  
-
-
-linear_classification(all_features,all_labels)
+mod_features = convert_to_lstm_format(all_features)
+           

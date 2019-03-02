@@ -25,6 +25,9 @@ class Person:
         self.xbot = 0
         self.ybot = 0
         self.jointLocations = []
+        # [nose, neck, Rsho, Relb, Rwri, Lsho, Lelb, Lwri, Rhip, Rkne, Rank, Lhip, Lkne, Lank, Leye, Reye, Lear, Rear, pt19]
+        # i have taken only 18 locations according to the parse_pickle script.
+        #access via 2) index location
         self.pickedUpItems = []
         self.Wallet = 0
         self.inBagItems = []
@@ -271,6 +274,8 @@ def system_worker():
     # input: none
     # ouput: none
     # task : entire system
+    
+    
     video_path = ""
     frame_path = ""
     object_detection_path = ""
@@ -343,3 +348,6 @@ def system_worker():
 
 
     return 
+
+
+system_worker()
