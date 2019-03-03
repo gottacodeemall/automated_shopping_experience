@@ -228,7 +228,7 @@ def generate_data(all_sequences):
 def discretize(labels):
     newlabels=[]
     for item in labels:
-        print(item)
+        #print(item)
         if item == "picking":
             newlabels.append(0)
         elif item == "placing":
@@ -240,14 +240,6 @@ def discretize(labels):
         else:
             print("ERROR when discretizing.")
     return newlabels
-
-#saving the SVM's model
-
-def lstm():
-    
-    return
-
-
 
 def loadDir():
     all_sequences = []
@@ -348,38 +340,11 @@ from keras.layers.core import Dense, Activation, Dropout
 from sklearn.metrics import mean_squared_error
 from sklearn.utils import shuffle
 
-def fit_model(train_X, train_Y, window_size = 5):
-    model = Sequential()
-    
-    model.add(LSTM(4, 
-                   input_shape = (1, window_size)))
-    model.add(Dense(1))
-    model.compile(loss = "mean_squared_error", 
-                  optimizer = "adam")
-    model.fit(train_X, 
-              train_Y, 
-              epochs = 100, 
-              batch_size = 1, 
-              verbose = 2)
-    
-    return(model)
-
-
-
-def predict_and_score(model, X, Y):
-    # Make predictions on the original scale of the data.
-    pred = scaler.inverse_transform(model.predict(X))
-    # Prepare Y data to also be on the original scale for interpretability.
-    orig_data = scaler.inverse_transform([Y])
-    # Calculate RMSE.
-    score = math.sqrt(mean_squared_error(orig_data[0], pred[:, 0]))
-    return(score, pred)
-
 
 from numpy import array
 def convert_to_lstm_format(all_features):
         npfeatures = array(all_features) 	
-        features = npfeatures.reshape(len(all_features), 52, 5)
+        features = npfeatures.reshape(len(all_features), 5, 52)
         print(features.shape)
         return npfeatures      
 
@@ -406,6 +371,28 @@ def normalize_time_series(all_features):
     return final_list
 
 
+def fit_model(train_X, train_Y, no_of_frames = 5):	
+    model = Sequential()
+    model.add(LSTM(100, input_shape=(no_of_frames,52)))
+    model.add(Dropout(0.5))
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(4, activation='softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    model.fit(train_X, train_Y, epochs=150, batch_size=5, verbose=2)   
+    return(model)
+    
+def train_model(train_d,train_l):
+    model = fit_model(train_d, train_l)
+    model.save('act_rec_lstm.h5')
+    return model
+
+def load_trained_model():
+    model = load_model('77.h5')
+    return model
+
+
+from keras.models import load_model
+import keras
 def train_test_split(features, labels):
     data = features
     labels = np.asarray(discretize(labels))
@@ -428,11 +415,25 @@ def train_test_split(features, labels):
 
         train_d = convert_to_lstm_format(train_d)
         test_d = convert_to_lstm_format(test_d)
-        
-        
-        cur_matrix=confusion_matrix(test_l,ftest_pred)
-        cur_matrix=np.asarray(cur_matrix)
+
+        ##one hot encoding must be performed before
+        train_l = keras.utils.to_categorical(train_l)
+        test_l = keras.utils.to_categorical(test_l)        
+        ##training
+        #model = train_model(train_d, train_l)
+        ## dont train
+        model =load_trained_model()
+        # fit network
+	
+    	# evaluate model
+        test_pred = model.predict(test_d)
+        cur_matrix = confusion_matrix(test_l.argmax(axis=1), test_pred.argmax(axis=1))
         conf_mat=np.add(conf_mat, cur_matrix)
+        print(cur_matrix)
+        _,accuracytrain = model.evaluate(train_d, train_l, batch_size=20, verbose=2)
+        _,accuracytest = model.evaluate(test_d, test_l, batch_size=20, verbose=2)
+        print(accuracytrain, accuracytest)
+        scores.append(accuracytest*100)
     scores=np.asarray(scores)    
     print(scores.mean())
     print(conf_mat)
@@ -443,6 +444,3 @@ all_sequences = loadDir()
 all_features, all_labels = generate_data(all_sequences)
 all_features = normalize_time_series(all_features)
 train_test_split(all_features, all_labels)
-
-mod_features = convert_to_lstm_format(all_features)
-           
