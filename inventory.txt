@@ -1,0 +1,7 @@
+handwash 40 1
+shampoo 68 1
+all_out 80 1
+speaker 1200 1 
+cinthol 35 1
+kettle 1800 1 
+surf 20 1
