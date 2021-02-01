@@ -39,7 +39,7 @@ continuously monitored with the help of object detection and pose estimation alg
 - Long Short Term Memory Networks. (**Chosen**)
 - Support Vector Machines.
 - Pure Algorithms.
-- 
+
 **Results:** Accuracy for customer actions: 76.979%.
 
 ## Fun Video
